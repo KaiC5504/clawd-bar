@@ -1,0 +1,57 @@
+{
+  "name": "clawd-bar",
+  "version": "0.6.0",
+  "description": "Clawd, Claude Code's crab, lives in a band above your prompt: he acts out the session, shows what's running, your context and usage limits, and races your CI builds. Unofficial fan mod.",
+  "author": {
+    "name": "KaiC5504"
+  },
+  "homepage": "https://github.com/KaiC5504/clawd-bar",
+  "repository": "https://github.com/KaiC5504/clawd-bar",
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "pet": {
+      "type": "boolean",
+      "title": "Show Clawd above the prompt",
+      "description": "Draw this session's Clawd in the band above the prompt",
+      "default": true
+    },
+    "ci": {
+      "type": "boolean",
+      "title": "Watch CI builds",
+      "description": "Race Codemagic and GitHub Actions builds above the prompt and alert when they finish",
+      "default": true
+    },
+    "continueAfterBuilds": {
+      "type": "boolean",
+      "title": "Let Claude continue after builds",
+      "description": "When a build finishes in this session's repo, send Claude the result as a new prompt (with the failure log when it fails). Off keeps the race and the alerts.",
+      "default": true
+    },
+    "ntfyTopic": {
+      "type": "string",
+      "title": "ntfy topic",
+      "description": "Private ntfy.sh topic for phone pushes when a build finishes. Leave empty to turn phone pushes off.",
+      "sensitive": true,
+      "default": ""
+    },
+    "bridge": {
+      "type": "boolean",
+      "title": "Feed Clawd on Desk",
+      "description": "Forward session events to the Clawd on Desk app in place of its per-event command hooks. It holds off while those hooks are installed; /clawd desk swaps them over",
+      "default": true
+    },
+    "clawdInstallDir": {
+      "type": "string",
+      "title": "Clawd on Desk app folder",
+      "description": "Leave empty to find it automatically. Otherwise the installed app's resources/app.asar.unpacked folder",
+      "default": ""
+    },
+    "nodePath": {
+      "type": "string",
+      "title": "Node.js executable",
+      "description": "Runs the bridge sidecar",
+      "default": "node"
+    }
+  }
+}

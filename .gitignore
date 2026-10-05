@@ -1,0 +1,5 @@
+# Written by Claude Code when it loads the mod
+.claude-plugin/types/
+node_modules/
+# Local notes and plans
+.claude/

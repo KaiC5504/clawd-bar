@@ -1,0 +1,14 @@
+{
+  "name": "clawd-bar",
+  "description": "Unofficial Claude Code fan mods by KaiC5504",
+  "owner": {
+    "name": "KaiC5504"
+  },
+  "plugins": [
+    {
+      "name": "clawd-bar",
+      "source": "./",
+      "description": "Clawd lives in a band above your Claude Code prompt: acts out the session, shows what's running, context and usage limits, and races your CI builds. Unofficial fan mod."
+    }
+  ]
+}

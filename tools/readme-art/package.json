@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "description": "Builds the README art in docs/readme/ from the plugin's own scenes and band",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "fontkit": "2.0.4"
+  }
+}
