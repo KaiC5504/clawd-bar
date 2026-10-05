@@ -132,8 +132,8 @@ const BAND_COLS = 110
 const BAND_W = BAND_COLS * CELL + 2 * PAD
 
 // The band as register.tsx assembles it: Clawd, the gauges, the divider, the lines.
-function bandSpans({ meters, paint, isRace, lines }) {
-  const fit = band.fitBand(BAND_COLS, COLS, meters, isRace ? 6 : 10)
+function bandSpans({ meters, paint, lines }) {
+  const fit = band.fitBand(BAND_COLS, COLS, meters)
   const textWidth = Math.max(10, BAND_COLS - COLS - 2 - (fit.gauges ? fit.width + 2 : 0))
   const tree = h(
     'Box',
@@ -269,7 +269,6 @@ function raceAt(t) {
   }
   return {
     meters: usage(52, 40),
-    isRace: !finished,
     clawd: frameAt(shown.act, t - raceActFrom),
     lines: width => band.ciLines(ELS, shown, view, now, width),
     caret: Math.floor(t / 500) % 2 === 0,

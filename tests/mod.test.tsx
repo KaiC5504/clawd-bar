@@ -307,6 +307,22 @@ test('/clawd demo plays every state of the band, then stops', async ($, on) => {
   await back.unmount()
 })
 
+test('a race on a wide terminal keeps the gauges whole, and its lane stops at 30', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  fakeSession(on, [], [])
+  await $.classic.SessionStart({ source: 'startup' })
+  await clock.settle()
+  await $.command.run({ ...TYPED_CLAWD, args: 'demo' })
+  // The demo's CI scenes come last; the first of them is a live race.
+  await clock.advance((DEMO_SCENES - 7) * DEMO_SCENE_MS)
+
+  const band = await $.ui.mount({ plugin: 'clawd-bar', surface: 'terminal', ...BAND, props: { ...BAND.props, bodyColumns: 200 } })
+  expect(await band.find({ type: 'Text', text: /^▊{10} 61%$/ })).toBeDefined()
+  const you = String((await band.find({ type: 'Text', text: /^you / }))?.text)
+  expect(/^you {3}([━▶·]+)/.exec(you)?.[1]).toHaveLength(31)
+  await band.unmount()
+})
+
 const APP = '/Tools/Clawd/resources/app.asar.unpacked'
 const SETTINGS = '/Users/tester/.claude/settings.json'
 const STATE_HOOK = { matcher: '', hooks: [{ type: 'command', command: `"node" "${APP}/hooks/clawd-hook.js" Stop` }] }

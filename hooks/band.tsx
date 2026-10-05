@@ -13,6 +13,8 @@ type Els = { Box: any; Text: any }
 
 const BLUE = 'suggestion'
 const STEP_W = 24
+// Long enough to read the race; any longer only stretches the dots across a wide terminal.
+const LANE_W = 30
 const BRANCH = '⎇'
 
 const CI_ACTS: Record<CiPose, ClawdAct> = {
@@ -62,7 +64,7 @@ function live({ Box, Text }: Els, run: Run, view: View | null, now: number, widt
   const rec = view?.records[recordKey(run)]
   const lane = lanes(run, rec, now)
   const delta = liveDelta(run, rec, now)
-  const laneW = Math.max(8, width - 6 - 2 - STEP_W - 1)
+  const laneW = Math.min(LANE_W, Math.max(8, width - 6 - 2 - STEP_W - 1))
   const track = (p: number, ch: string) => `${'━'.repeat(Math.round(p * laneW))}${ch}`.padEnd(laneW + 1, '·')
   const more = (view?.watches.length ?? 1) - 1
   const cur = run.steps.find(s => s.state === 'running')
@@ -70,7 +72,8 @@ function live({ Box, Text }: Els, run: Run, view: View | null, now: number, widt
   const step = cur ? `${clip(cur.name, STEP_W - 8)} ${idx}/${run.steps.length}` : run.state === 'queued' ? 'queued' : 'starting'
 
   return [
-    <Box key="title" flexDirection="row" justifyContent="space-between">
+    // As wide as the lanes, so the clock sits over the end of the race rather than the terminal's edge.
+    <Box key="title" flexDirection="row" justifyContent="space-between" width={Math.min(width, 6 + laneW + 1 + 2 + STEP_W)}>
       <Text bold wrap="truncate-end">
         {run.label}
         <Text dimColor>

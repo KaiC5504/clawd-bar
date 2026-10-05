@@ -657,8 +657,7 @@ async function drawBand($: EngineInterface, e: BandEvent, next: (e: BandEvent) =
   const columns = e.props.bodyColumns
   const clawdCols = isTerminal ? CLAWD_COLS : DESKTOP_CLAWD_COLS
   const boxCols = isTerminal ? 1 : DESKTOP_BOX_COLS
-  // A live race needs its lanes, so its bars stay short.
-  const fit = fitBand(columns, clawdCols, meterList, ci?.run ? 6 : 10, boxCols, !isTerminal)
+  const fit = fitBand(columns, clawdCols, meterList, 10, boxCols, !isTerminal)
   const textWidth = Math.max(10, columns - clawdCols - GAP - (fit.gauges ? fit.width + 2 : 0))
   const els = $.ui.resolve(e) as never as { Box: any; Text: any; Client?: any }
   const { Box, Client } = els

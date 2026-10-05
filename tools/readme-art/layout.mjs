@@ -45,6 +45,7 @@ export function layout(node, width) {
   if (node.type === 'Text') return layoutText(node, width)
 
   const p = node.props
+  if (typeof p.width === 'number') width = width === undefined ? p.width : Math.min(width, p.width)
   const children = kids(node)
   const margin = c => (typeof c === 'object' ? (c.props.marginLeft ?? 0) + (c.props.marginRight ?? 0) : 0)
   if ((p.flexDirection ?? 'row') === 'column') {
