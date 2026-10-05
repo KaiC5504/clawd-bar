@@ -100,7 +100,8 @@ describe('scenes', () => {
 
 describe('the falling-block game', () => {
   test('no piece ever overlaps a block or leaves the well', () => {
-    for (let k = 0; k < WELL_LOOP_MS; k += 10) {
+    // Every 30 ms: no step of the game is shorter than a 35 ms hard drop, so each position is seen.
+    for (let k = 0; k < WELL_LOOP_MS; k += 30) {
       const seen = new Set<string>()
       for (const [col, row] of wellAt(k).blocks) {
         expect(col >= 0 && col < WELL_W && row >= 0 && row < WELL_H).toBe(true)
