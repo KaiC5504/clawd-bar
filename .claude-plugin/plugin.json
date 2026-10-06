@@ -8,6 +8,7 @@
   "homepage": "https://github.com/KaiC5504/clawd-bar",
   "repository": "https://github.com/KaiC5504/clawd-bar",
   "license": "MIT",
+  "keywords": ["clawd", "mod", "band", "statusline", "context", "usage-limits", "ci", "pixel-art"],
   "types": "./types/index.d.ts",
   "userConfig": {
     "pet": {
