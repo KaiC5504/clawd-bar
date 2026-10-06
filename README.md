@@ -7,8 +7,6 @@ build and the band turns into a race against your best time.
 
 <img src="docs/readme/session.svg" alt="The band above the Claude Code prompt through one session: Clawd idles while a prompt is typed, thinks under a flickering bulb, edits code in a little editor whose header shows the real diff (-2+2), unrolls a scroll to read, throws paper planes for subagents, rings a bell when Claude needs an answer, plays a falling-block game during a slow build (landing a T-spin), runs the tests and comes up with the real count (48 ✓), celebrates with confetti when the turn ends, then dozes and falls asleep. Beside him: context and usage gauges that fill as they rise and turn yellow past 80 %, then what's running with the turn clock, task progress, and the repo and branch.">
 
-<sub>Drawn by the plugin's own code: its scenes and its band.</sub>
-
 ## Install
 
 ```
