@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.7.0 — 2026-10-06
+
+### Added
+- Clawd acts out the call that's running, not just "working", with real text where pixels would
+  only hint:
+  - An edit shows a little editor headed by the file type, which swaps to the real diff (`-2+2`)
+    while the old lines are wiped and the new ones type in. He glances at you when it lands.
+  - A new file fills the editor under its line count (`+120`), then a tick.
+  - A command shows a terminal headed by its program (`$ git`), its seconds counting up, and a
+    `✓` or `✗` with its time when it ends.
+  - A test run sweeps ten dots, then settles them to the real pass/fail share and shows the counts
+    (`41 ✓` over `7 ✗`), read from vitest, jest, pytest, cargo, node, bun and mocha output. He
+    cheers a pass and turns to you on a failure.
+  - An install piles up parcels under the package manager's name.
+  - An MCP tool plugs a cable into a socket marked with the server's initial in its colour.
+- The game cabinet: a command running past 20 s gets him bored onto a game, and he goes back to
+  its result when it ends. Snake, breakout and a runner join the falling-block game, each opening
+  on its name and closing on `GG!`; the next slow command gets the next game.
+
+### Changed
+- The falling-block game is no longer what every edit, command and tool shows. It plays in the
+  cabinet, and for tools with no scene of their own.
+- A failed command or test run shows its own `✗` instead of the rain cloud; other failed tools
+  still rain.
+- On the desktop, a scene that plays once (an edit, a result) holds its last frame, and each call
+  gets its own drawing.
+
 ## 0.6.0 — 2026-10-05
 
 ### Changed

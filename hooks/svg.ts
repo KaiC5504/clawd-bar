@@ -1,5 +1,5 @@
 import { DEFAULT_COLOR } from './pixels'
-import { COLS, GLOWING, ROWS, frameAt, svgLoopMs } from './scenes'
+import { COLS, GLOWING, ROWS, frameAt, isOnce, svgLoopMs } from './scenes'
 import type { Extras, Scene } from './scenes'
 import type { Canvas } from './pixels'
 
@@ -94,17 +94,24 @@ function sample(frame: (t: number) => Canvas, total: number) {
 // stays dark whatever the page (the README's): the glow always on, no outlines.
 export type Drawing = { defs: string; styles: string; body: string }
 
-export function drawClawd(frame: (t: number) => Canvas, total: number, { prefix = '', theme = 'auto' }: { prefix?: string; theme?: 'auto' | 'dark' } = {}): Drawing {
+// `once`: play through a single time and hold the last frame, for a scene that does the same.
+export function drawClawd(
+  frame: (t: number) => Canvas,
+  total: number,
+  { prefix = '', theme = 'auto', once = false }: { prefix?: string; theme?: 'auto' | 'dark'; once?: boolean } = {},
+): Drawing {
   const { shapes, glyphs } = sample(frame, total)
   const styles: string[] = []
   const names = new Map<string, string>()
   const animate = <T>(track: Track<T>, show: (v: T) => string) => {
-    const keys = track.map(([t, v]) => `${+((t / total) * 100).toFixed(3)}%{${show(v)}}`).join('')
+    // Held at the end, a step animation shows its 100% keyframe, so that one must be the last frame.
+    const end = once ? `100%{${show(track.at(-1)![1])}}` : ''
+    const keys = track.map(([t, v]) => `${+((t / total) * 100).toFixed(3)}%{${show(v)}}`).join('') + end
     let name = names.get(keys)
     if (!name) {
       name = `${prefix}a${names.size}`
       names.set(keys, name)
-      styles.push(`@keyframes ${name}{${keys}}.${name}{animation:${name} ${total}ms step-end infinite}`)
+      styles.push(`@keyframes ${name}{${keys}}.${name}{animation:${name} ${total}ms step-end ${once ? '1 forwards' : 'infinite'}}`)
     }
     return name
   }
@@ -155,7 +162,7 @@ export function drawClawd(frame: (t: number) => Canvas, total: number, { prefix 
 }
 
 export function svgFor(scene: Scene, extras: Extras = {}): string {
-  const { defs, styles, body } = drawClawd(t => frameAt(scene, t, extras), svgLoopMs(scene))
+  const { defs, styles, body } = drawClawd(t => frameAt(scene, t, extras), svgLoopMs(scene, extras), { once: isOnce(scene) })
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${VIEW_H}" width="${W * 5}" height="${VIEW_H * 5}" shape-rendering="crispEdges">` +
     // A sandboxed frame whose scheme differs from the page's gets an opaque canvas; following the page keeps it clear.

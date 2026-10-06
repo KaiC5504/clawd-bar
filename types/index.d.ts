@@ -12,6 +12,27 @@ export type ClawdPet = {
   isCtxHigh: boolean
   // Set while a usage limit is used up; resetsAt is when the last of them resets.
   outOfUsage: { resetsAt: string | null } | null
+  // The tool call he's acting out; hooks/work.ts reads it from the call.
+  work: Work | null
+}
+
+export type WorkKind = 'edit' | 'write' | 'shell' | 'tests' | 'install' | 'mcp' | 'other'
+
+// `passed` / `failed`: test counts, when the runner's output gave them.
+export type WorkResult = { ok: boolean; ms: number; passed?: number; failed?: number }
+
+// `cmd`: the program a shell call runs (or the package manager, for installs).
+export type Work = {
+  id: string
+  kind: WorkKind
+  startedAt: number
+  ext?: string
+  removed?: number
+  added?: number
+  lines?: number
+  cmd?: string
+  server?: string
+  result?: WorkResult
 }
 
 // What a CI step looks like Clawd is doing; hooks/ci/poses.ts maps step names here.
@@ -25,6 +46,15 @@ export type ClawdAct =
   | 'reading'
   | 'searching'
   | 'browsing'
+  | 'editing'
+  | 'writing'
+  | 'running'
+  | 'ran'
+  | 'testing'
+  | 'tested'
+  | 'installing'
+  | 'installed'
+  | 'linking'
   | 'delegating'
   | 'calling'
   | 'compacting'

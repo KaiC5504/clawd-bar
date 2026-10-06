@@ -136,7 +136,21 @@ const ACT_COLOR: Partial<Record<ClawdAct, string>> = {
   compacting: BLUE,
 }
 
-const WORKING: ReadonlySet<ClawdAct> = new Set(['working', 'reading', 'searching', 'browsing'])
+const WORKING: ReadonlySet<ClawdAct> = new Set([
+  'working',
+  'reading',
+  'searching',
+  'browsing',
+  'editing',
+  'writing',
+  'running',
+  'ran',
+  'testing',
+  'tested',
+  'installing',
+  'installed',
+  'linking',
+])
 
 function headline(shown: SessionShown): string {
   const { act, label, activity } = shown

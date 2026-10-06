@@ -1,4 +1,4 @@
-import type { Activity, ClawdAct, Run, SplitRecord, View } from '../types'
+import type { Activity, ClawdAct, Run, SplitRecord, View, Work } from '../types'
 import { NO_ACTIVITY } from './activity'
 import type { SessionShown } from './band'
 import type { Meter } from './usage'
@@ -12,6 +12,7 @@ export type DemoScene = {
   meters: Meter[]
   session?: SessionShown
   sweat?: boolean
+  work?: Work
   ci?: View
 }
 
@@ -22,7 +23,15 @@ const FULL: Meter[] = [meter('ctx', 92), meter('5h', 84, '18m'), meter('wk', 22,
 const SPENT: Meter[] = [meter('ctx', 34), meter('5h', 100, '18m'), meter('wk', 41, '3d 12h')]
 const PLACE = { repo: 'clawd-bar', branch: 'main' }
 
-type SessionSpec = { act: ClawdAct; label: string; activity?: Partial<Activity>; subagents?: number; meters?: Meter[]; sweat?: boolean }
+type SessionSpec = {
+  act: ClawdAct
+  label: string
+  activity?: Partial<Activity>
+  subagents?: number
+  meters?: Meter[]
+  sweat?: boolean
+  work?: Omit<Work, 'id' | 'startedAt'>
+}
 
 const TASKS: Activity['tasks'] = [
   { id: '1', subject: 'Read ci-watch', status: 'completed' },
@@ -77,12 +86,14 @@ function ciView(now: number, running: number | 'passed' | 'failed'): View {
   return { ...base, watches: [], last: { run, isNewPB: running === 'passed', at: now - 1000, isReplay: false } }
 }
 
-function session(spec: SessionSpec, now: number, index: number, total: number): DemoScene {
+function session(spec: SessionSpec, now: number, index: number, total: number, sceneAt: number): DemoScene {
   const activity: Activity = { ...NO_ACTIVITY, ...spec.activity }
   if (spec.activity?.turnStartedAt !== undefined && spec.activity.turnStartedAt !== null) activity.turnStartedAt = now - spec.activity.turnStartedAt
   return {
     meters: spec.meters ?? METERS,
     ...(spec.sweat ? { sweat: true } : {}),
+    // Each scene is a call of its own, begun when the scene came up.
+    ...(spec.work ? { work: { ...spec.work, id: `demo${index}`, startedAt: sceneAt } } : {}),
     session: {
       act: spec.act,
       label: spec.label,
@@ -100,7 +111,16 @@ const RUNNING = { turnStartedAt: 102_000 }
 const SESSION_SCENES: SessionSpec[] = [
   { act: 'idle', label: 'Idle' },
   { act: 'thinking', label: 'Thinking…', activity: { turnStartedAt: 4000 } },
-  { act: 'working', label: 'Working · Edit', activity: { ...RUNNING, doing: 'Editing scenes.ts', tools: 14, files: ['a', 'b', 'c'], tasks: TASKS } },
+  { act: 'editing', label: 'Working · Edit', work: { kind: 'edit', ext: 'ts', removed: 2, added: 2 }, activity: { ...RUNNING, doing: 'Editing scenes.ts', tools: 14, files: ['a', 'b', 'c'], tasks: TASKS } },
+  { act: 'writing', label: 'Working · Write', work: { kind: 'write', ext: 'md', lines: 120 }, activity: { ...RUNNING, doing: 'Writing CHANGELOG.md', tools: 15, files: ['a', 'b', 'c', 'd'] } },
+  { act: 'running', label: 'Working · Bash', work: { kind: 'shell', cmd: 'git' }, activity: { ...RUNNING, doing: 'Running git status', tools: 16, files: ['a', 'b', 'c', 'd'] } },
+  { act: 'ran', label: 'Working · Bash', work: { kind: 'shell', cmd: 'tsc', result: { ok: false, ms: 12_000 } }, activity: { ...RUNNING, doing: 'Running tsc --noEmit', tools: 17, files: ['a', 'b', 'c', 'd'] } },
+  { act: 'testing', label: 'Working · Bash', work: { kind: 'tests', cmd: 'vitest' }, activity: { ...RUNNING, doing: 'Running npm test', tools: 18, files: ['a', 'b', 'c', 'd'] } },
+  { act: 'tested', label: 'Working · Bash', work: { kind: 'tests', cmd: 'vitest', result: { ok: false, ms: 9000, passed: 41, failed: 7 } }, activity: { ...RUNNING, doing: 'Running npm test', tools: 18, files: ['a', 'b', 'c', 'd'] } },
+  { act: 'tested', label: 'Working · Bash', work: { kind: 'tests', cmd: 'vitest', result: { ok: true, ms: 8000, passed: 48, failed: 0 } }, activity: { ...RUNNING, doing: 'Running npm test', tools: 20, files: ['a', 'b', 'c', 'd'] } },
+  { act: 'installing', label: 'Working · Bash', work: { kind: 'install', cmd: 'pnpm' }, activity: { ...RUNNING, doing: 'Running pnpm add zod', tools: 21, files: ['a', 'b', 'c', 'd'] } },
+  { act: 'linking', label: 'Working · mcp__linear__list_issues', work: { kind: 'mcp', server: 'linear' }, activity: { ...RUNNING, doing: 'list issues (linear)', tools: 22, files: ['a', 'b', 'c', 'd'] } },
+  { act: 'working', label: 'Working · Bash', activity: { ...RUNNING, doing: 'Running npm run build', tools: 23, files: ['a', 'b', 'c', 'd'] } },
   { act: 'reading', label: 'Working · Read', activity: { ...RUNNING, doing: 'Reading band.tsx', tools: 15, files: ['a', 'b', 'c'] } },
   { act: 'searching', label: 'Working · Grep', activity: { ...RUNNING, doing: 'Searching for blit', tools: 16, files: ['a', 'b', 'c'] } },
   { act: 'browsing', label: 'Working · WebFetch', activity: { ...RUNNING, doing: 'Fetching the changelog', tools: 17, files: ['a', 'b', 'c'] } },
@@ -125,6 +145,6 @@ export const DEMO_SCENES = SESSION_SCENES.length + CI.length
 export function demoScene(elapsedMs: number, now: number): DemoScene {
   const index = Math.floor(elapsedMs / DEMO_SCENE_MS) % DEMO_SCENES
   const spec = SESSION_SCENES[index]
-  if (spec) return session(spec, now, index, DEMO_SCENES)
+  if (spec) return session(spec, now, index, DEMO_SCENES, now - (elapsedMs % DEMO_SCENE_MS))
   return { meters: METERS, ci: ciView(now, CI[index - SESSION_SCENES.length]!) }
 }

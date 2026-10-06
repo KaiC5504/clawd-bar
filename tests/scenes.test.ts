@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import type { Work } from '../types'
 import { DEFAULT_COLOR, canvas, dot, glyph, pack } from '../hooks/pixels'
-import { COLS, ROWS, SCENE_NAMES, frameAt, loopMs, svgLoopMs } from '../hooks/scenes'
+import { BREAKOUT_MS, RUNNER_MS, SCREEN_H, SCREEN_W, SNAKE_MS, breakoutAt, runnerAt, snakeAt } from '../hooks/arcade'
+import { COLS, ROWS, SCENE_NAMES, frameAt, isOnce, loopMs, svgLoopMs } from '../hooks/scenes'
 import { SVG_MAX_CHARS, svgFor } from '../hooks/svg'
 import { WELL_H, WELL_LOOP_MS, WELL_W, simulateWell, wellAt } from '../hooks/well'
 
@@ -151,11 +153,84 @@ describe('the falling-block game', () => {
     expect(spins).toBeGreaterThan(5)
   })
 
-  test('he watches the well and never cheers a clear: feet planted, left arm down', () => {
+  test('at the cabinet he never cheers a clear: feet planted, left arm down', () => {
     for (let t = 0; t < WELL_LOOP_MS; t += 50) {
       const c = frameAt('working', t)
       for (const x of [4, 6, 11, 13]) expect(c.px[4 * COLS * 2 + x]).toBe(0xde886d)
       expect(c.px[2 * COLS * 2]).toBeUndefined()
+    }
+  })
+})
+
+// The text a scene writes into the five cells right of him, on one row.
+const textAt = (c: ReturnType<typeof frameAt>, row: number) =>
+  Array.from({ length: 5 }, (_, i) => c.glyphs.get(row * COLS + 10 + i)?.[0])
+    .map(code => (code === undefined ? ' ' : String.fromCodePoint(code)))
+    .join('')
+
+describe('the game cabinet', () => {
+  test('snake, breakout and the runner stay on their screen and play to an end', () => {
+    for (const [at, ms] of [[snakeAt, SNAKE_MS], [breakoutAt, BREAKOUT_MS], [runnerAt, RUNNER_MS]] as const) {
+      for (let k = 0; k < ms; k += 20) {
+        for (const [x, y] of at(k)) expect(x >= 0 && x < SCREEN_W && y >= 0 && y < SCREEN_H).toBe(true)
+      }
+    }
+    // The last brick is gone before the end, and the snake ends long.
+    expect(breakoutAt(BREAKOUT_MS - 1).filter(([, y]) => y <= 1).length).toBeLessThanOrEqual(1)
+    expect(snakeAt(SNAKE_MS - 150).length).toBeGreaterThanOrEqual(28)
+  })
+
+  test('each game opens on its title and ends on GG, and a spell starts on the game it is given', () => {
+    const titles = [0, 1, 2, 3].map(game => textAt(frameAt('working', 950, { game }), 1))
+    expect(titles).toEqual(['BLOCK', 'SNAKE', 'BRICK', ' RUN!'])
+    // Before the first letter, every title screen looks the same.
+    expect(frameAt('working', 0, { game: 2 }).px).toEqual(frameAt('working', 0, { game: 0 }).px)
+    const snake = svgLoopMs('working', { game: 1 })
+    expect(textAt(frameAt('working', snake - 100, { game: 1 }), 1)).toBe(' GG! ')
+    // Past its own spell, the cabinet moves on to the next game.
+    expect(textAt(frameAt('working', snake + 950, { game: 1 }), 1)).toBe('BRICK')
+  })
+})
+
+describe('call scenes', () => {
+  const work = (fields: Partial<Work>): Work => ({ id: 'x', kind: 'other', startedAt: 0, ...fields })
+
+  test('an edit shows the real diff count, then settles on the file type', () => {
+    const edit = work({ kind: 'edit', ext: 'py', removed: 3, added: 1 })
+    expect(textAt(frameAt('editing', 500, { work: edit }), 0)).toBe('-3+1 ')
+    expect(textAt(frameAt('editing', 3999, { work: edit }), 0)).toBe('.py  ')
+    // Too long to fit together, the halves take turns.
+    const big = work({ kind: 'edit', ext: 'ts', removed: 120, added: 340 })
+    expect([textAt(frameAt('editing', 500, { work: big }), 0), textAt(frameAt('editing', 1000, { work: big }), 0)]).toEqual(['-120 ', '+340 '])
+  })
+
+  test('a command names its program; the seconds tick only where a clock can', () => {
+    const git = work({ kind: 'shell', cmd: 'git' })
+    expect(textAt(frameAt('running', 0, { work: git }), 0)).toBe('$ git')
+    expect(textAt(frameAt('running', 0, { work: git }), 2)).toBe('     ')
+    expect(textAt(frameAt('running', 2500, { work: git, lead: 9000 }), 2)).toBe('  11s')
+    expect(textAt(frameAt('running', 0, { work: work({ kind: 'shell', cmd: 'pytest' }) }), 0)).toBe('pyte…')
+    const failed = work({ kind: 'shell', cmd: 'tsc', result: { ok: false, ms: 12_000 } })
+    expect(textAt(frameAt('ran', 1399, { work: failed }), 2)).toBe('✗ 12s')
+  })
+
+  test('a test run ends on its real counts, and a failure turns him to you', () => {
+    const red = work({ kind: 'tests', result: { ok: false, ms: 9000, passed: 41, failed: 7 } })
+    const end = frameAt('tested', 2799, { work: red })
+    expect([textAt(end, 0), textAt(end, 2)]).toEqual(['41 ✓ ', '7 ✗  '])
+    expect(end.px[1 * COLS * 2 + 5]).toBe(0x000000)
+    const green = work({ kind: 'tests', result: { ok: true, ms: 9000, passed: 48, failed: 0 } })
+    expect(textAt(frameAt('tested', 2799, { work: green }), 1)).toBe('48 ✓ ')
+  })
+
+  test('the MCP socket wears the server initial', () => {
+    expect(frameAt('linking', 0, { work: work({ kind: 'mcp', server: 'Gmail' }) }).glyphs.get(1 * COLS + 14)?.[0]).toBe('G'.codePointAt(0))
+  })
+
+  test('a scene that plays once holds its last frame', () => {
+    for (const scene of ['editing', 'writing', 'ran', 'tested', 'installed'] as const) {
+      expect(isOnce(scene)).toBe(true)
+      expect(frameAt(scene, 60_000)).toEqual(frameAt(scene, loopMs(scene) - 1))
     }
   })
 })
@@ -197,7 +272,17 @@ describe('desktop svg', () => {
 
   test('every scene fits the Svg size cap, the full block game included', () => {
     for (const scene of SCENE_NAMES) expect(svgFor(scene, { sweat: true, planes: 3 }).length).toBeLessThan(SVG_MAX_CHARS)
+    // The desktop plays one cabinet game per spell, and every one of them fits.
+    for (let game = 0; game < 4; game++) expect(svgFor('working', { game }).length).toBeLessThan(SVG_MAX_CHARS)
     expect(svgFor('working')).toContain(`${svgLoopMs('working')}ms step-end infinite`)
+  })
+
+  test('a scene that plays once runs a single time and ends on its last frame', () => {
+    const svg = svgFor('tested')
+    expect(svg).toContain(`${svgLoopMs('tested')}ms step-end 1 forwards`)
+    expect(svg).not.toContain('infinite')
+    // Every animated shape names its 100% keyframe, so holding the end shows the last frame and not the first.
+    for (const [, body] of svg.matchAll(/@keyframes \w+\{((?:[\d.]+%\{[^}]*\})+)\}/g)) expect(body).toMatch(/100%\{[^}]*\}$/)
   })
 
   test('his body is one shape; light sources glow on dark, white props get an outline on light', () => {

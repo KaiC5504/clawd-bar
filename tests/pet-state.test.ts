@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { applyEvent, DOZE_AFTER_MS, initialPet, ONE_SHOT_MS, SLEEP_AFTER_MS, visualFor, WAKE_MS, withUsage } from '../hooks/pet-state'
+import { applyEvent, BORED_AFTER_MS, DOZE_AFTER_MS, initialPet, ONE_SHOT_MS, settleWork, SLEEP_AFTER_MS, visualFor, WAKE_MS, withUsage } from '../hooks/pet-state'
 
 const T0 = 1_000_000
 
@@ -12,18 +12,70 @@ describe('event → act', () => {
   test('a prompt thinks, and each kind of tool has its own scene', () => {
     expect(visualFor(run([['UserPromptSubmit', { prompt: 'hi' }]]), T0 + 10).act).toBe('thinking')
 
-    const working = visualFor(run([['UserPromptSubmit', {}], ['PreToolUse', { tool_name: 'Bash' }]]), T0 + 10)
-    expect(working).toEqual({ act: 'working', label: 'Working · Bash', isSweating: false })
+    const running = visualFor(run([['UserPromptSubmit', {}], ['PreToolUse', { tool_name: 'Bash', tool_input: { command: 'git status' } }]]), T0 + 10)
+    expect(running).toEqual({ act: 'running', label: 'Working · Bash', isSweating: false })
 
-    const act = (tool: string) => visualFor(run([['PreToolUse', { tool_name: tool }]]), T0 + 10).act
-    expect(act('Edit')).toBe('working')
-    expect(act('Write')).toBe('working')
+    const act = (tool: string, tool_input: Record<string, unknown> = {}) => visualFor(run([['PreToolUse', { tool_name: tool, tool_input }]]), T0 + 10).act
+    expect(act('Edit')).toBe('editing')
+    expect(act('MultiEdit')).toBe('editing')
+    expect(act('Write')).toBe('writing')
     expect(act('Read')).toBe('reading')
     expect(act('Grep')).toBe('searching')
     expect(act('Glob')).toBe('searching')
     expect(act('WebFetch')).toBe('browsing')
-    expect(act('PowerShell')).toBe('working')
-    expect(act('mcp__linear__list_issues')).toBe('working')
+    expect(act('PowerShell')).toBe('running')
+    expect(act('Bash', { command: 'npm test' })).toBe('testing')
+    expect(act('Bash', { command: 'pnpm add zod' })).toBe('installing')
+    expect(act('mcp__linear__list_issues')).toBe('linking')
+    // A tool with no scene of its own plays the game cabinet.
+    expect(act('Skill')).toBe('working')
+  })
+
+  test('the call he acts out is the one the tool ran, settled by its id', () => {
+    const started = run([['PreToolUse', { tool_name: 'Bash', tool_input: { command: 'npm test' }, tool_use_id: 'a' }]])
+    expect(started.work).toMatchObject({ id: 'a', kind: 'tests', startedAt: T0 })
+
+    const stray = applyEvent(started, 'PostToolUse', { tool_use_id: 'b', tool_response: { stdout: '3 passed' } }, T0 + 5)
+    expect(stray.work?.result).toBeUndefined()
+
+    const out = { stdout: 'Tests  48 passed (48)', stderr: '' }
+    const done = applyEvent(started, 'PostToolUse', { tool_use_id: 'a', tool_response: out, duration_ms: 4000 }, T0 + 4000)
+    expect(done.work?.result).toEqual({ ok: true, ms: 4000, passed: 48, failed: 0 })
+    expect(visualFor(done, T0 + 4010).act).toBe('tested')
+
+    expect(applyEvent(done, 'UserPromptSubmit', {}, T0 + 5000).work).toBeNull()
+    expect(applyEvent(done, 'Stop', {}, T0 + 5000).work).toBeNull()
+  })
+
+  test('a command that runs long gets him bored onto the game cabinet, until it finishes', () => {
+    const started = run([['PreToolUse', { tool_name: 'Bash', tool_input: { command: 'sleep 60' }, tool_use_id: 'a' }]])
+    expect(visualFor(started, T0 + BORED_AFTER_MS - 1).act).toBe('running')
+    expect(visualFor(started, T0 + BORED_AFTER_MS).act).toBe('working')
+    const done = applyEvent(started, 'PostToolUse', { tool_use_id: 'a', tool_response: { stdout: '' } }, T0 + 60_000)
+    expect(visualFor(done, T0 + 60_010).act).toBe('ran')
+  })
+
+  test("a command's result from its call only fills in the call he shows, and never wakes him", () => {
+    const started = run([['PreToolUse', { tool_name: 'Bash', tool_input: { command: 'npm test' }, tool_use_id: 'a' }]])
+    const settled = settleWork(started, { tool_use_id: 'a', tool_response: { stdout: 'Tests  3 passed (3)' } }, false, T0 + 50)
+    expect(settled.work?.result).toEqual({ ok: true, ms: 50, passed: 3, failed: 0 })
+    expect(settled.lastActivityAt).toBe(started.lastActivityAt)
+
+    // Esc ends the turn before the command's own result comes back.
+    const stopped = applyEvent(started, 'TurnEnded', { reason: 'aborted' }, T0 + 20)
+    expect(settleWork(stopped, { tool_use_id: 'a', error: 'Interrupted' }, true, T0 + 40)).toBe(stopped)
+    expect(visualFor(stopped, T0 + 50).act).toBe('interrupted')
+  })
+
+  test('a failed command shows its own failure; other failed tools still rain', () => {
+    const shell = run([['PreToolUse', { tool_name: 'Bash', tool_input: { command: 'npx vitest' }, tool_use_id: 'a' }]])
+    const failed = applyEvent(shell, 'PostToolUseFailure', { tool_use_id: 'a', error: 'Exit code 1\nTests  7 failed | 41 passed (48)' }, T0 + 50)
+    expect(failed.oneShot).toBeNull()
+    expect(visualFor(failed, T0 + 60).act).toBe('tested')
+    expect(failed.work?.result).toEqual({ ok: false, ms: 50, passed: 41, failed: 7 })
+
+    const edit = run([['PreToolUse', { tool_name: 'Edit', tool_input: {}, tool_use_id: 'e' }]])
+    expect(visualFor(applyEvent(edit, 'PostToolUseFailure', { tool_use_id: 'e', error: 'String not found' }, T0 + 50), T0 + 60).act).toBe('error')
   })
 
   test('the Agent tool and subagents juggle, settled by id not by count', () => {
@@ -100,7 +152,7 @@ describe('usage → act', () => {
     expect(visualFor(high, T0 + 110)).toEqual({ act: 'idle', label: 'Context almost full', isSweating: true })
     expect(visualFor(high, T0 + 100 + ONE_SHOT_MS.sweating)).toEqual({ act: 'idle', label: 'Idle', isSweating: true })
     const busy = applyEvent(high, 'PreToolUse', { tool_name: 'Edit' }, T0 + 120)
-    expect(visualFor(busy, T0 + 130 + ONE_SHOT_MS.sweating)).toEqual({ act: 'working', label: 'Working · Edit', isSweating: true })
+    expect(visualFor(busy, T0 + 130 + ONE_SHOT_MS.sweating)).toEqual({ act: 'editing', label: 'Working · Edit', isSweating: true })
 
     // Still high: nothing changes, and the very same pet comes back.
     expect(withUsage(high, usage(95), T0 + 200)).toBe(high)

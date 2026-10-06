@@ -8,7 +8,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { glyphs } from './glyphs.mjs'
 import { layout } from './layout.mjs'
 
-const { frameAt, svgLoopMs, COLS, ROWS } = await import('../../hooks/scenes.ts')
+const { frameAt, isOnce, svgLoopMs, COLS, ROWS } = await import('../../hooks/scenes.ts')
 const { drawClawd } = await import('../../hooks/svg.ts')
 const band = await import('../../hooks/band.tsx')
 const { barMotion } = await import('../../hooks/bars.ts')
@@ -182,12 +182,17 @@ const tasks = done =>
     { id: '3', subject: 'Run the tests', activeForm: 'Running the tests' },
   ].map((task, i) => ({ ...task, status: i < done ? 'completed' : i === done ? 'in_progress' : 'pending' }))
 
-// Where the block game shows a T-spin, so his first stretch of work lands on one.
+// Where the cabinet's block game shows a T-spin (past its title card), so his game lands on one.
+const TITLE_MS = 1000
 const firstSpin = (() => {
   let k = 39_000
   while (k < WELL_LOOP_MS && wellAt(k).mood !== 'tSpin') k += 10
-  return k
+  return k + TITLE_MS
 })()
+const call = fields => ({ id: '', startedAt: 0, ...fields })
+const EDIT = call({ kind: 'edit', ext: 'ts', removed: 2, added: 2 })
+const TESTS = call({ kind: 'tests', cmd: 'npm' })
+const PASSED = { ...TESTS, result: { ok: true, ms: 8000, passed: 48, failed: 0 } }
 
 const TURN = 3000
 const NONE = { doing: null, turnStartedAt: null, tools: 0, files: [], lastTurn: null, tasks: [] }
@@ -196,11 +201,13 @@ const after = { ...NONE, lastTurn: { ms: 23_400, tools: 11, files: 3 } }
 const SESSION = [
   { ms: 3000, act: 'idle', label: 'Idle', activity: { ...NONE, lastTurn: { ms: 48_000, tools: 6, files: 1 } }, use: usage(18, 76), typing: true },
   { ms: 2400, act: 'thinking', label: 'Thinking…', activity: busy({}), use: usage(19, 76) },
-  { ms: 5400, act: 'working', from: firstSpin - 4200, label: 'Working · Edit', activity: busy({ doing: 'Editing theme.ts', tools: 3, files: ['a'], tasks: tasks(0) }), use: usage(26, 77) },
+  { ms: 4000, act: 'editing', work: EDIT, label: 'Working · Edit', activity: busy({ doing: 'Editing theme.ts', tools: 3, files: ['a'], tasks: tasks(0) }), use: usage(26, 77) },
   { ms: 2600, act: 'reading', label: 'Working · Read', activity: busy({ doing: 'Reading settings.tsx', tools: 5, files: ['a'], tasks: tasks(1) }), use: usage(31, 78) },
   { ms: 3200, act: 'delegating', label: 'Juggling 2 subagents', subagents: 2, activity: busy({ doing: 'Handing off: Find hard-coded colours', tools: 6, files: ['a'], tasks: tasks(1) }), use: usage(35, 81) },
   { ms: 2800, act: 'calling', label: 'Needs you', activity: busy({ tools: 8, files: ['a', 'b'], tasks: tasks(2) }), use: usage(38, 81) },
-  { ms: 3400, act: 'working', from: 9000, label: 'Working · Bash', activity: busy({ doing: 'Running npm test', tools: 10, files: ['a', 'b', 'c'], tasks: tasks(2) }), use: usage(41, 82) },
+  { ms: 4200, act: 'working', from: firstSpin - 3000, label: 'Working · Bash', activity: busy({ doing: 'Running npm run build', tools: 9, files: ['a', 'b', 'c'], tasks: tasks(2) }), use: usage(40, 82) },
+  { ms: 2000, act: 'testing', work: TESTS, label: 'Working · Bash', activity: busy({ doing: 'Running npm test', tools: 10, files: ['a', 'b', 'c'], tasks: tasks(2) }), use: usage(41, 82) },
+  { ms: 2800, act: 'tested', work: PASSED, label: 'Working · Bash', activity: busy({ doing: 'Running npm test', tools: 10, files: ['a', 'b', 'c'], tasks: tasks(2) }), use: usage(41, 82) },
   { ms: 3200, act: 'done', label: 'Done!', activity: after, use: usage(42, 82) },
   { ms: 3000, act: 'dozing', label: 'Dozing', activity: after, use: usage(42, 82) },
   { ms: 4000, act: 'sleeping', label: 'Zzz', activity: after, use: usage(42, 82) },
@@ -214,7 +221,7 @@ function sessionAt(t) {
   const typed = beat.typing && since >= TYPE_FROM ? PROMPT.slice(0, Math.floor((since - TYPE_FROM) / TYPE_MS) + 1) : ''
   return {
     meters: beat.use,
-    clawd: frameAt(beat.act, since + (beat.from ?? 0), { planes: shown.subagents }),
+    clawd: frameAt(beat.act, since + (beat.from ?? 0), { planes: shown.subagents, ...(beat.work ? { work: beat.work } : {}) }),
     lines: () => band.sessionLines(ELS, shown, t),
     typed,
     caret: Math.floor(t / 500) % 2 === 0 || (beat.typing && typed.length > 0 && typed.length < PROMPT.length),
@@ -281,7 +288,15 @@ const SHEET = [
   ['SESSION', [
     ['idle', 'IDLE', 'nothing running'],
     ['thinking', 'THINKING', 'you send a prompt'],
-    ['working', 'WORKING', 'edits, commands, tools'],
+    ['editing', 'EDITING', 'Edit: the real diff'],
+    ['writing', 'WRITING', 'Write: a new file'],
+    ['running', 'RUNNING', 'Bash, PowerShell'],
+    ['ran', 'RAN', 'a command ends'],
+    ['testing', 'TESTING', 'a test run'],
+    ['tested', 'TESTED', 'its real counts'],
+    ['installing', 'INSTALLING', 'npm, pnpm, uv, pip'],
+    ['linking', 'LINKING', 'MCP tools'],
+    ['working', 'GAMES', 'a command past 20 s'],
     ['reading', 'READING', 'Read'],
     ['searching', 'SEARCHING', 'Grep, Glob'],
     ['browsing', 'BROWSING', 'WebFetch, WebSearch'],
@@ -322,7 +337,9 @@ function sheet() {
     tiles.forEach(([scene, name, trigger, extras = {}], i) => {
       const x = PAD + (i % perRow) * tileW
       const top = y + Math.floor(i / perRow) * tileH
-      parts.push(clawdBox(t => frameAt(scene, t, { planes: 2, ...extras }), svgLoopMs(scene), x, top, `s${n++}`))
+      // A scene that plays once holds its end a while here, then plays again.
+      const total = svgLoopMs(scene) + (isOnce(scene) ? 1500 : 0)
+      parts.push(clawdBox(t => frameAt(scene, t, { planes: 2, ...extras }), total, x, top, `s${n++}`))
       text.push(...spanItems([{ x: 0, y: 0, text: name, style: { bold: true } }, { x: 0, y: 1, text: trigger, style: { dimColor: true } }], x, top + ROWS * LINE + 6))
     })
     y += Math.ceil(tiles.length / perRow) * tileH + 12

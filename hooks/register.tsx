@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PluginOptions, Register } from 'claude-code'
 
-import type { ClawdAct, Place, Run } from '../types'
+import type { ClawdAct, Place, Run, Work } from '../types'
 import { NO_ACTIVITY, applyActivity, withTaskCreated, withTaskUpdated, withTodos } from './activity'
 import { ciLines, ciShown, divider, fitBand, gaugeColumns, sessionLines } from './band'
 import { barMotion } from './bars'
@@ -15,10 +15,10 @@ import { classify, parseCodemagicStarted, watchedRun } from './ci/detect'
 import type { Host } from './ci/host'
 import { originRemote, repoSlug } from './ci/repo'
 import { addWatch, loadView, pollOnce, showReplay, stopAll } from './ci/watcher'
-import { applyEvent, initialPet, visualFor, withUsage } from './pet-state'
+import { applyEvent, initialPet, settleWork, visualFor, withUsage } from './pet-state'
 import type { HookPayload } from './pet-state'
 import { encode } from './pixels'
-import { COLS as CLAWD_COLS, ROWS as CLAWD_ROWS, frameAt, svgLoopMs } from './scenes'
+import { CABINET_GAMES, COLS as CLAWD_COLS, ROWS as CLAWD_ROWS, frameAt, isOnce, svgLoopMs } from './scenes'
 import type { Extras } from './scenes'
 import { svgFor } from './svg'
 import { meters } from './usage'
@@ -42,6 +42,10 @@ const SVG_ASPECT = (CLAWD_COLS * 2) / (CLAWD_ROWS * 4)
 // them, and one ▊ draws half again as wide as a column in its font.
 const DESKTOP_CLAWD_COLS = 14
 const DESKTOP_BOX_COLS = 1.5
+// Desktop Svgs kept built: every edit or command result can be its own.
+const SVG_CACHE = 24
+// The scenes that act out one call: a new call starts its scene over.
+const CALL_ACTS: ReadonlySet<ClawdAct> = new Set(['editing', 'writing', 'running', 'ran', 'testing', 'tested', 'installing', 'installed', 'linking'])
 
 const pet = atom({ plugin: 'clawd-bar', key: 'pet' } as const, initialPet(0))
 const visual = atom({ plugin: 'clawd-bar', key: 'visual' } as const, { act: 'idle', label: 'Idle' })
@@ -65,7 +69,7 @@ let isReady = false
 let dataDir = ''
 let transcriptPath = ''
 let selfRepo: string | null | undefined
-let animation: { act: ClawdAct; startedAt: number; requestId: string; extras: Extras; painted: string } | null = null
+let animation: { key: string; act: ClawdAct; startedAt: number; requestId: string; extras: Extras; painted: string } | null = null
 let frameTimer: { cancel: () => void } | null = null
 const bars = barMotion()
 // What the terminal's bars last drew from, so the bar ticker can tell when a redraw is due.
@@ -78,6 +82,9 @@ let demoIndex = -1
 let desktopPlay: { key: string; startedAt: number } | null = null
 let isEngineWorking: boolean | null = null
 const svgs = new Map<string, string>()
+// Each spell at the cabinet starts on the next game.
+let cabinetSpell = -1
+let lastAct: ClawdAct | null = null
 
 // Resolves to `fallback` instead of hanging a queue when `promise` never settles.
 function within<T>($: EngineInterface, ms: number, promise: Promise<T>, fallback: T): Promise<T> {
@@ -570,10 +577,25 @@ async function takeOverWatch($: EngineInterface, command: string, provider: 'cod
   return watches.some(w => w.provider === 'codemagic' && w.repo.toLowerCase() === here.slug.toLowerCase())
 }
 
-type Shell = { command: string; run_in_background?: boolean }
-type ShellResult = { deny?: string; isError?: boolean; result?: { stdout?: string } | null }
+type Shell = { command: string; run_in_background?: boolean; tool_use_id?: string }
+type ShellResult = { deny?: string; isError?: boolean; text?: string; result?: { stdout?: string } | null }
 
 async function onShell($: EngineInterface, e: Shell, next: (e: Shell) => Promise<ShellResult>) {
+  const ran = await watchShell($, e, next)
+  await settleShell($, e, ran)
+  return ran
+}
+
+// The command's result, straight from the call, for its result scene; PostToolUse brings the same.
+async function settleShell($: EngineInterface, e: Shell, ran: ShellResult): Promise<void> {
+  if (!settings.isPetOn || ran.deny !== undefined) return
+  const now = await $.clock.now()
+  const payload = ran.isError ? { tool_use_id: e.tool_use_id, error: ran.text ?? '' } : { tool_use_id: e.tool_use_id, tool_response: ran.result }
+  await update($, pet, p => settleWork(p, payload, ran.isError === true, now))
+  await refreshVisual($)
+}
+
+async function watchShell($: EngineInterface, e: Shell, next: (e: Shell) => Promise<ShellResult>) {
   if (!settings.isCiOn) return next(e)
   const d = classify(e.command)
   // The refusal promises Claude a new turn, so it only happens when one will come.
@@ -640,14 +662,26 @@ async function drawBand($: EngineInterface, e: BandEvent, next: (e: BandEvent) =
   const view = scene ? (scene.ci ?? null) : settings.isCiOn ? ((await read($, ciView)) ?? (await loadView(hostFrom($)))) : null
   const ci = scene || settings.isCiOn ? ciShown(view, now) : null
   const shownVisual = await read($, visual)
+  const shownPet = await read($, pet)
   const session: SessionShown = scene?.session ?? {
     ...shownVisual,
     activity: await read($, activity),
-    subagents: (await read($, pet)).subagents.length,
+    subagents: shownPet.subagents.length,
     place: await read($, place),
   }
   const act = ci?.act ?? session.act
-  const extras: Extras = ci ? {} : { sweat: (scene ? scene.sweat : shownVisual.isSweating) === true, planes: session.subagents }
+  if (act === 'working' && lastAct !== 'working') cabinetSpell++
+  lastAct = act
+  const work: Work | null = (scene ? scene.work : shownPet.work) ?? null
+  const extras: Extras = ci
+    ? {}
+    : {
+        sweat: (scene ? scene.sweat : shownVisual.isSweating) === true,
+        planes: session.subagents,
+        ...(work ? { work } : {}),
+        ...(act === 'working' ? { game: Math.max(0, cabinetSpell) % CABINET_GAMES } : {}),
+      }
+  const playKey = CALL_ACTS.has(act) && work ? `${act}:${work.id}` : act
   const usage = scene ? null : await $.session.usage().then(u => u, () => null)
   const meterList: Meter[] = scene ? scene.meters : usage ? meters(usage, now) : []
   hasClock = scene !== null || ci !== null || session.activity.turnStartedAt !== null
@@ -686,13 +720,13 @@ async function drawBand($: EngineInterface, e: BandEvent, next: (e: BandEvent) =
 
   if (e.surface === 'terminal') {
     const { Raster } = $.ui.resolve(e as never) as never as { Raster: any }
-    // A new label over the same act keeps its place in the loop.
-    if (!animation || animation.act !== act || animation.requestId !== e.requestId) {
+    // A new label over the same act keeps its place in the loop; a new call starts its scene over.
+    if (!animation || animation.key !== playKey || animation.requestId !== e.requestId) {
       stopAnimation()
-      animation = { act, startedAt: now, requestId: e.requestId, extras, painted: '' }
+      animation = { key: playKey, act, startedAt: now, requestId: e.requestId, extras, painted: '' }
       frameTimer = $.clock.every(FRAME_MS, () => void paintFrame($))
     }
-    animation.extras = extras
+    animation.extras = work ? { ...extras, lead: animation.startedAt - work.startedAt } : extras
     animation.painted = cellsAt(animation, now)
     return (
       <Box flexDirection="row">
@@ -703,12 +737,18 @@ async function drawBand($: EngineInterface, e: BandEvent, next: (e: BandEvent) =
   }
 
   const { Svg } = $.ui.resolve(e as never) as never as { Svg: any }
-  const svgKey = `${act}:${extras.sweat ? 1 : 0}:${extras.planes ?? 0}`
-  if (!svgs.has(svgKey)) svgs.set(svgKey, svgFor(act, extras))
-  if (desktopPlay?.key !== svgKey) desktopPlay = { key: svgKey, startedAt: now }
+  const drawn = CALL_ACTS.has(act) && work ? JSON.stringify({ ...work, id: undefined, startedAt: undefined }) : `${extras.game ?? ''}`
+  const svgKey = `${act}:${extras.sweat ? 1 : 0}:${extras.planes ?? 0}:${drawn}`
+  const svg = svgs.get(svgKey) ?? svgFor(act, extras)
+  // Most recently used last, so the oldest goes first.
+  svgs.delete(svgKey)
+  svgs.set(svgKey, svg)
+  if (svgs.size > SVG_CACHE) svgs.delete(svgs.keys().next().value!)
+  if (desktopPlay?.key !== `${svgKey}:${playKey}`) desktopPlay = { key: `${svgKey}:${playKey}`, startedAt: now }
   // Start the rebuilt frame where the loop already is, so a redraw doesn't send him back to the start.
-  const into = (now - desktopPlay.startedAt) % svgLoopMs(act)
-  const source = (svgs.get(svgKey) ?? '').replace('<style>', `<style>*{animation-delay:-${into}ms!important}`)
+  const loop = svgLoopMs(act, extras)
+  const into = isOnce(act) ? Math.min(now - desktopPlay.startedAt, loop) : (now - desktopPlay.startedAt) % loop
+  const source = svg.replace('<style>', `<style>*{animation-delay:-${into}ms!important}`)
   return (
     <Box flexDirection="row" alignItems="center">
       <Svg source={source} alt={session.label} width={SVG_HEIGHT * SVG_ASPECT} height={SVG_HEIGHT} isInteractive />

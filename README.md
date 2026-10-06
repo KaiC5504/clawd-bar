@@ -5,7 +5,7 @@ prompt. He acts out what your session is doing, gauges beside him show how much 
 you have left, and the lines after them show what's running and when Claude needs you. Start a CI
 build and the band turns into a race against your best time.
 
-<img src="docs/readme/session.svg" alt="The band above the Claude Code prompt through one session: Clawd idles while a prompt is typed, thinks under a flickering bulb, plays a falling-block game while tools run (landing a T-spin), unrolls a scroll to read, throws paper planes for subagents, rings a bell when Claude needs an answer, celebrates with confetti when the turn ends, then dozes and falls asleep. Beside him: context and usage gauges that fill as they rise and turn yellow past 80 %, then what's running with the turn clock, task progress, and the repo and branch.">
+<img src="docs/readme/session.svg" alt="The band above the Claude Code prompt through one session: Clawd idles while a prompt is typed, thinks under a flickering bulb, edits code in a little editor whose header shows the real diff (-2+2), unrolls a scroll to read, throws paper planes for subagents, rings a bell when Claude needs an answer, plays a falling-block game during a slow build (landing a T-spin), runs the tests and comes up with the real count (48 ✓), celebrates with confetti when the turn ends, then dozes and falls asleep. Beside him: context and usage gauges that fill as they rise and turn yellow past 80 %, then what's running with the turn clock, task progress, and the repo and branch.">
 
 <sub>Drawn by the plugin's own code: its scenes and its band.</sub>
 
@@ -64,10 +64,32 @@ room.
 
 **And Clawd himself.** Every state is a little scene with its own props: a bulb that won't quite
 switch on while he thinks, a scroll he unrolls to read, paper planes for subagents, a bell when
-Claude needs you. While he works he plays a falling-block game. Every game ends on a perfect
-clear, and between games he plays T-spin showpieces, so the loop runs for minutes without a seam.
+Claude needs you.
 
-<img src="docs/readme/sprite-sheet.svg" alt="Every state Clawd acts out, each playing live, with what sets it off. Session: idle (nothing running), thinking (you send a prompt), working (edits, commands, tools: a falling-block game), reading, searching, browsing, delegating (subagents run), needs you, compacting, done, error, interrupted, sweating (context past 90 %), dozing (1 minute idle), asleep (10 minutes idle), waking, exhausted (a usage limit runs out). CI race: prep, fetch, sign, build, publish, passed, failed.">
+What he does acts out the very call that's running, with real text where pixels would only hint:
+
+- **An edit**: a little editor headed by the file type (`.ts`), which swaps to the real diff
+  (`-2+2`) while the old lines go red, get wiped and the new ones type in green. A one-line fix
+  only bites the end off a line. When it lands he glances at you.
+- **A new file**: the same editor filling up, headed by its line count (`+120`), then a tick.
+- **A command**: a terminal headed by the program (`$ git`), the seconds counting up in the
+  corner, and a `✓` or `✗` when it ends.
+- **A test run**: a light sweeps ten dots while it runs; when it ends they settle to the real
+  pass/fail share and the counts come up (`41 ✓` over `7 ✗`). He cheers a pass and turns to you
+  on a failure. Counts come from vitest, jest, pytest, cargo, node, bun and mocha output; other
+  runners settle on just the `✓` or `✗`.
+- **An install** (`npm`, `pnpm`, `uv`, `pip`, …): parcels piling up under the package manager's
+  name.
+- **An MCP tool**: he plugs a cable into a socket marked with the server's initial in its own
+  colour, so a Gmail call looks unlike a Linear one.
+
+**The game cabinet.** A command that runs past 20 s bores him: he glances at you from 15 s, then
+pulls out a game, and goes back to the command's result when it ends. The cabinet takes turns
+between a falling-block game (every game ends on a perfect clear, with T-spin showpieces between),
+snake, breakout and a runner jumping cacti. Each opens on its name, plays to its end and closes on
+`GG!`, and the next slow command gets the next game. Tools with no scene of their own play it too.
+
+<img src="docs/readme/sprite-sheet.svg" alt="Every state Clawd acts out, each playing live, with what sets it off. Session: idle (nothing running), thinking (you send a prompt), editing (the real diff), writing (a new file), running (a command), ran (it ends, with ✓ or ✗ and its time), testing, tested (its real counts), installing (npm, pnpm, uv, pip), linking (MCP tools), games (a command past 20 s: the game cabinet), reading, searching, browsing, delegating (subagents run), needs you, compacting, done, error, interrupted, sweating (context past 90 %), dozing (1 minute idle), asleep (10 minutes idle), waking, exhausted (a usage limit runs out). CI race: prep, fetch, sign, build, publish, passed, failed.">
 
 ## CI races
 
@@ -172,7 +194,9 @@ commands also run on GitHub Actions for every push and pull request.
 
 - `hooks/scenes.ts`: every scene, drawn fresh each frame on a 30 × 6 pixel canvas
 - `hooks/pixels.ts`: packs that canvas into terminal cells, four pixels to a cell in quadrant blocks
+- `hooks/work.ts`: reads a tool call (the diff, the program, the MCP server) and its result (test counts)
 - `hooks/well.ts`: the falling-block game and its T-spin showpieces
+- `hooks/arcade.ts`: the cabinet's other games: snake, breakout and the runner
 - `hooks/pet-state.ts`: turns session events into what he acts out
 - `hooks/band.tsx` and `hooks/bars.ts`: lay out the gauges and lines, and move the bars
 - `hooks/svg.ts`: Clawd as an animated SVG, for the desktop app and this README

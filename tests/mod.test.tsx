@@ -141,7 +141,8 @@ test('a tool call names what he is doing and counts the turn', async ($, on) => 
 
   const band = await $.ui.mount({ plugin: 'clawd-bar', surface: 'terminal', ...BAND })
   expect(await band.find({ type: 'Text', text: 'Editing sprites.ts' })).toBeDefined()
-  expect((await band.find({ type: 'Raster', key: 'clawd' }))?.props.cells).toBe(still('working'))
+  const edit = { id: '', kind: 'edit', startedAt: 0, ext: 'ts', removed: 1, added: 1 } as const
+  expect((await band.find({ type: 'Raster', key: 'clawd' }))?.props.cells).toBe(encode(frameAt('editing', 0, { sweat: false, planes: 0, work: edit })))
   expect(await band.find({ type: 'Text', text: '1 tool · 1 file changed' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: '1:42' })).toBeDefined()
   await band.unmount()
@@ -152,6 +153,73 @@ test('a tool call names what he is doing and counts the turn', async ($, on) => 
   expect(await after.find({ type: 'Text', text: /Done in 1m 42s · 1 tool · 1 file/ })).toBeDefined()
   expect((await after.find({ type: 'Raster', key: 'clawd' }))?.props.cells).toBe(still('done'))
   await after.unmount()
+})
+
+test('a command plays its own scene, turns to the game cabinet when slow, and its result plays from the start', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const blits: string[] = []
+  fakeSession(on, [], blits)
+  // The command runs until the test lets it finish.
+  let finish = (_: unknown) => {}
+  on('tool.call', { tool: 'Bash' }, () => new Promise(resolve => (finish = resolve)) as never)
+
+  // Claude Code says a turn runs, so the long wait below isn't taken for a stuck one.
+  const busy = { ...BAND, props: { ...BAND.props, isWorking: true } }
+  await $.classic.SessionStart({ source: 'startup' })
+  await $.classic.UserPromptSubmit({ prompt: 'run the tests' })
+  const ran = $.tool.call({ tool: 'Bash', command: 'npm test' } as never)
+  await clock.settle()
+
+  const first = await $.ui.mount({ plugin: 'clawd-bar', surface: 'terminal', ...busy })
+  expect(await first.find({ type: 'Text', text: 'Running npm test' })).toBeDefined()
+  expect((await first.find({ type: 'Raster', key: 'clawd' }))?.props.cells).toBe(encode(frameAt('testing', 0, { lead: 0 })))
+  await first.unmount()
+
+  // Twenty seconds in, he gives up waiting and the cabinet comes out: every game opens on a blank title screen.
+  await clock.advance(20_000)
+  const bored = await $.ui.mount({ plugin: 'clawd-bar', surface: 'terminal', ...busy })
+  expect((await bored.find({ type: 'Raster', key: 'clawd' }))?.props.cells).toBe(encode(frameAt('working', 0)))
+  await bored.unmount()
+
+  finish({ result: { stdout: '      Tests  48 passed (48)\n', stderr: '', interrupted: false } })
+  await ran
+  await clock.settle()
+  const result = await $.ui.mount({ plugin: 'clawd-bar', surface: 'terminal', ...busy })
+  blits.length = 0
+  await clock.advance(1800)
+  const passed = { id: '', kind: 'tests', startedAt: 0, result: { ok: true, ms: 20_000, passed: 48, failed: 0 } } as const
+  expect(blits.at(-1)).toBe(encode(frameAt('tested', 1800, { sweat: false, planes: 0, work: passed })))
+  await result.unmount()
+})
+
+test('on the desktop each call gets its own Svg, and a scene that plays once holds its last frame', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  fakeSession(on, [], [])
+  on('tool.call', { tool: 'Edit' }, () => ({ result: {} }) as never)
+  // Claude Code says a turn runs, so the long wait below isn't taken for a stuck one.
+  const busy = { ...BAND, props: { ...BAND.props, isWorking: true } }
+  const source = async () => {
+    const desktop = await $.ui.mount({ plugin: 'clawd-bar', surface: 'desktop', ...busy })
+    const svg = String((await desktop.find({ type: 'Svg' }))?.props.source)
+    await desktop.unmount()
+    return svg
+  }
+
+  await $.classic.SessionStart({ source: 'startup' })
+  await $.classic.UserPromptSubmit({ prompt: 'fix it' })
+  await $.tool.call({ tool: 'Edit', file_path: 'D:/x/band.tsx', old_string: 'a', new_string: 'b' } as never)
+  await clock.settle()
+  const ts = await source()
+  expect(ts).toContain('step-end 1 forwards')
+
+  await $.tool.call({ tool: 'Edit', file_path: 'D:/x/main.py', old_string: 'a\nb\nc', new_string: 'd' } as never)
+  await clock.settle()
+  const py = await source()
+  expect(py).not.toBe(ts)
+
+  // Long after the edit, a redraw shows where the scene ended, not its start again.
+  await clock.advance(60_000)
+  expect(/animation-delay:-(\d+)ms/.exec(await source())?.[1]).toBe('4000')
 })
 
 test('an interrupted turn, which fires no Stop, skids to a stop and then idles', async ($, on) => {

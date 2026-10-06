@@ -1,6 +1,6 @@
 {
   "name": "clawd-bar",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Clawd, Claude Code's crab, lives in a band above your prompt: he acts out the session, shows what's running, your context and usage limits, and races your CI builds. Unofficial fan mod.",
   "author": {
     "name": "KaiC5504"
