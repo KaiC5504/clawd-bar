@@ -223,4 +223,5 @@ not affiliated with Anthropic or with
 
 ## License
 
-MIT for the code. The Clawd character belongs to Anthropic and isn't covered by it.
+MIT for the code. The Clawd character belongs to Anthropic and isn't covered by it; this is an
+unofficial, non-commercial fan project.
