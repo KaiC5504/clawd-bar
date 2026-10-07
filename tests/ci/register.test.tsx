@@ -43,18 +43,21 @@ test(
   "with continuing off, a foreground watch runs, since no new turn would come",
   { options: { continueAfterBuilds: false } },
   async ($, on) => {
-    quiet(on)
+    const mem = quiet(on)
     on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
     const r = await $.tool.call({ tool: 'Bash', command: 'gh run watch 5 -R o/r --exit-status' })
     expect(r.deny).toBeUndefined()
+    expect((mem.watches as { id: string }[]).map(w => w.id)).toEqual(['5'])
   },
 )
 
-test('a background watch is allowed', async ($, on) => {
+test('a background watch is allowed, and raced without promising Claude a turn', async ($, on) => {
   const mem = quiet(on)
   on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
-  const r = await $.tool.call({ tool: 'Bash', command: 'gh run watch 5 -R o/r', run_in_background: true })
+  const r = await $.tool.call({ tool: 'Bash', command: 'gh run watch 5 -R o/r --exit-status > /dev/null 2>&1; echo done', run_in_background: true })
   expect(r.deny).toBeUndefined()
+  const watches = mem.watches as { id: string; repo: string; isPromised?: boolean }[]
+  expect(watches.map(w => `${w.id}:${w.repo}:${w.isPromised === true}`)).toEqual(['5:o/r:false'])
 })
 
 test('starting a Codemagic build adds a watch from the script output', async ($, on) => {

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- A passed build no longer sends Claude a prompt, since Claude is usually watching its own build.
+  It still does after clawd-bar took over a `gh run watch`, because Claude was told to wait for it.
+  Failures still send the log.
+
+### Fixed
+- A `gh run watch <id>` Claude runs in the background starts the race too. Before, only a
+  foreground watch or a `gh workflow run` did, so most runs needed `/ci`.
+- `--repo $R` no longer makes a watch for a repo literally named `$R`; it falls back to this repo.
+
 ## 0.7.0 — 2026-10-06
 
 ### Added

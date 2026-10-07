@@ -101,17 +101,20 @@ A race starts when:
 
 - Claude runs `gh workflow run` to start a GitHub Actions workflow
 - you type `/ci`, which picks up the latest run for this repo, live or just finished
-- Claude runs `gh run watch <id>` in the foreground: clawd-bar takes that run over and watches
-  it in the background instead, so Claude's turn isn't stuck waiting on it (only while **Let
-  Claude continue after builds** is on, since Claude gets its new turn from that)
+- Claude runs `gh run watch <id>`. In the background, Claude keeps its own watch and clawd-bar
+  races alongside it. In the foreground, clawd-bar takes that run over and watches it in the
+  background instead, so Claude's turn isn't stuck waiting on it (only while **Let Claude
+  continue after builds** is on, since Claude gets its new turn from that)
 
 When the build finishes:
 
 - a toast appears in Claude Code, and a desktop notification pops up
 - your phone gets a push, if you've set an ntfy topic (see Settings)
-- **Claude gets a new turn.** clawd-bar sends it the result as a prompt. After a pass, Claude
-  picks up where it left off. After a failure, the prompt carries the failure log and asks
-  Claude to diagnose and fix it. This only happens in a session open in the build's repo;
+- **After a failure, Claude gets a new turn.** clawd-bar sends it a prompt carrying the failure
+  log and asking Claude to diagnose and fix it. A pass stays quiet, since Claude is usually
+  watching its own build already. The one exception is a `gh run watch` clawd-bar took over:
+  Claude was told to end its turn and wait, so a pass there wakes it to pick up where it left
+  off. This only happens in a session open in the build's repo;
   anywhere else you just get the alerts. The log is marked as untrusted CI output, since anyone
   who can open a pull request writes some of it. Turn off **Let Claude continue after builds** to
   keep the race and the alerts without the new turn.
@@ -138,7 +141,7 @@ Open `/config` and find clawd-bar.
 | --- | --- | --- |
 | Show Clawd above the prompt | on | Turn the whole status area on or off. |
 | Watch CI builds | on | Race builds and send alerts when they finish. |
-| Let Claude continue after builds | on | Send Claude the result as a new prompt when a build finishes. |
+| Let Claude continue after builds | on | Send Claude a new prompt when a build fails, or passes after clawd-bar took over its `gh run watch`. |
 | ntfy topic | empty | An [ntfy.sh](https://ntfy.sh) topic name for phone pushes. Install the ntfy app, subscribe to the same topic, and you'll get a push when a build ends. Pick a long random name: anyone who knows it can read the pushes, which name your repo, branch and build. |
 | Feed Clawd on Desk | on | Feed the Clawd on Desk app once `/clawd desk` has switched it over. Does nothing without the app. |
 | Clawd on Desk app folder | empty | Found by itself. Set it only if `/clawd doctor` says the app wasn't found. |

@@ -123,6 +123,8 @@ export type Watch = {
   // The session polling this watch, and when it last did; see LEASE in hooks/ci/watcher.ts.
   owner?: string
   beat?: number
+  // Claude was told to end its turn and wait for this one, so a pass still has to wake it.
+  isPromised?: boolean
 }
 
 export type SplitRecord = { label: string; total: number; steps: { name: string; at: number }[] }

@@ -40,14 +40,32 @@ async function publish(h: Host) {
   await h.publish(await loadView(h))
 }
 
-export function addWatch(h: Host, w: { provider: Provider; id: string; repo: string; pending?: PendingLookup }) {
+export function addWatch(h: Host, w: { provider: Provider; id: string; repo: string; pending?: PendingLookup; isPromised?: boolean }) {
   return serial(async () => {
     const watches = await loadWatches(h)
-    if (w.id && watches.some(x => x.provider === w.provider && x.id === w.id)) return
+    const same = w.id ? watches.find(x => x.provider === w.provider && x.id === w.id) : undefined
+    if (same) {
+      if (w.isPromised && !same.isPromised) {
+        same.isPromised = true
+        await h.save('watches', watches)
+      }
+      return
+    }
     const now = await h.now()
     watches.push({ ...w, addedAt: now, errors: 0, owner: (await h.self()).id, beat: now })
     await h.save('watches', watches)
     await publish(h)
+  })
+}
+
+// Marks the matching watches promised; false when there are none.
+export function promiseWatches(h: Host, match: (w: Watch) => boolean) {
+  return serial(async () => {
+    const watches = await loadWatches(h)
+    const hits = watches.filter(match)
+    for (const w of hits) w.isPromised = true
+    if (hits.length) await h.save('watches', watches)
+    return hits.length > 0
   })
 }
 
@@ -89,7 +107,7 @@ async function refresh(h: Host, w: Watch, now: number): Promise<{ run?: Run; log
 
 // Returns the prompt to queue, if any; the caller submits it after the store chain is
 // released, because a submit only resolves once the current turn ends.
-async function finish(h: Host, run: Run, log: (() => Promise<string>) | undefined, opts: PollOpts, canPrompt: boolean) {
+async function finish(h: Host, run: Run, log: (() => Promise<string>) | undefined, opts: PollOpts, canPrompt: boolean, isPromised: boolean) {
   const records = ((await h.load('records')) as Record<string, SplitRecord> | undefined) ?? {}
   let last: LastResult = { run, isNewPB: false, at: await h.now(), isReplay: false }
 
@@ -110,6 +128,8 @@ async function finish(h: Host, run: Run, log: (() => Promise<string>) | undefine
   if (opts.ntfyTopic) await ntfy(h, opts.ntfyTopic, title, body, run.url).catch(() => undefined)
 
   if (opts.canContinue === false) return undefined
+  // Claude is usually watching its own build already; a pass only needs saying if it was told not to.
+  if (run.state === 'passed' && !isPromised) return undefined
   const text = continuePrompt(run, run.state === 'failed' && log ? await log() : undefined)
   if (!text) return undefined
   if (canPrompt) return text
@@ -126,13 +146,14 @@ export async function pollOnce(h: Host, opts: PollOpts) {
     const now = await h.now()
     const watches = await loadWatches(h)
     const handled = new Map<string, Watch | null>()
-    const seen = new Set<string>()
-    const done: { run: Run; log?: () => Promise<string> }[] = []
+    // A run's first watch, or null when another session holds it.
+    const seen = new Map<string, Watch | null>()
+    const done: { watch: Watch; run: Run; log?: () => Promise<string> }[] = []
 
     for (const w of watches) {
       const key = keyOf(w)
       if (w.owner && w.owner !== me.id && now - (w.beat ?? 0) < LEASE) {
-        if (w.id) seen.add(`${w.provider}:${w.id}`)
+        if (w.id) seen.set(`${w.provider}:${w.id}`, null)
         continue
       }
       w.owner = me.id
@@ -141,14 +162,17 @@ export async function pollOnce(h: Host, opts: PollOpts) {
         const { run, log } = await refresh(h, w, now)
         w.errors = 0
         // Two dispatches, or /ci plus a dispatch, can land on the same run: keep the first.
-        if (w.id && seen.has(`${w.provider}:${w.id}`)) {
+        const runKey = `${w.provider}:${w.id}`
+        if (w.id && seen.has(runKey)) {
+          const kept = seen.get(runKey)
+          if (kept && w.isPromised) kept.isPromised = true
           handled.set(key, null)
           continue
         }
-        if (w.id) seen.add(`${w.provider}:${w.id}`)
+        if (w.id) seen.set(runKey, w)
         if (run) w.run = run
         if (run && isDone(run)) {
-          done.push({ run, log })
+          done.push({ watch: w, run, log })
           handled.set(key, null)
         } else {
           handled.set(key, w)
@@ -178,7 +202,7 @@ export async function pollOnce(h: Host, opts: PollOpts) {
 
     const texts: string[] = []
     for (const d of done) {
-      const text = await finish(h, d.run, d.log, opts, sameRepo(me.repo, d.run.repo))
+      const text = await finish(h, d.run, d.log, opts, sameRepo(me.repo, d.run.repo), d.watch.isPromised === true)
       if (text) texts.push(text)
     }
     await publish(h)

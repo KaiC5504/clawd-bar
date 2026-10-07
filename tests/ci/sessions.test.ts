@@ -16,7 +16,7 @@ test('only the session that owns a watch alerts and prompts', async () => {
   const store: Record<string, unknown> = {}
   const a = session(store, 'A', 'acme/rocket')
   const b = session(store, 'B', 'acme/comet')
-  await addWatch(a, { provider: 'codemagic', id: 'b1', repo: 'acme/rocket' })
+  await addWatch(a, { provider: 'codemagic', id: 'b1', repo: 'acme/rocket', isPromised: true })
   await pollOnce(b, { ntfyTopic: '' })
   expect(b.prompts).toEqual([])
   expect(b.toasts).toEqual([])
@@ -26,14 +26,14 @@ test('only the session that owns a watch alerts and prompts', async () => {
 })
 
 test('a watch whose owner went quiet is adopted by a session in the same repo', async () => {
-  const store: Record<string, unknown> = { watches: [{ provider: 'codemagic', id: 'b1', repo: 'acme/rocket', addedAt: 0, errors: 0, owner: 'gone', beat: T - 5 * 60_000 }] }
+  const store: Record<string, unknown> = { watches: [{ provider: 'codemagic', id: 'b1', repo: 'acme/rocket', addedAt: 0, errors: 0, owner: 'gone', beat: T - 5 * 60_000, isPromised: true }] }
   const c = session(store, 'C', 'acme/rocket')
   await pollOnce(c, { ntfyTopic: '' })
   expect(c.prompts.length).toBe(1)
 })
 
 test('a session in another repo alerts an orphaned build but never asks Claude to act there', async () => {
-  const store: Record<string, unknown> = { watches: [{ provider: 'codemagic', id: 'b1', repo: 'acme/rocket', addedAt: 0, errors: 0, owner: 'gone', beat: T - 5 * 60_000 }] }
+  const store: Record<string, unknown> = { watches: [{ provider: 'codemagic', id: 'b1', repo: 'acme/rocket', addedAt: 0, errors: 0, owner: 'gone', beat: T - 5 * 60_000, isPromised: true }] }
   const d = session(store, 'D', 'acme/comet')
   await pollOnce(d, { ntfyTopic: '' })
   expect(d.prompts).toEqual([])
@@ -76,8 +76,18 @@ test('two pending watches that resolve to the same run alert once', async () => 
   h.clock.t += 1
   await addWatch(h, { provider: 'actions', id: '', repo: 'acme/rocket', pending: { workflow: 'pr.yaml', since: T + 1 } })
   await pollOnce(h, { ntfyTopic: '' })
-  expect(h.prompts.length).toBe(1)
+  expect(h.toasts.filter(t => t.includes('passed')).length).toBe(1)
   expect((await loadView(h)).last?.run.state).toBe('passed')
+})
+
+test('a dispatch that Claude then watches keeps the promise when the two watches merge', async () => {
+  const h = fakeHost({ now: T, run: argv => argv[2] === 'list'
+    ? { exitCode: 0, stdout: JSON.stringify([{ databaseId: 42, createdAt: '2026-10-05T10:03:01Z' }]), stderr: '' }
+    : { exitCode: 0, stdout: JSON.stringify({ databaseId: 42, number: 1, status: 'completed', conclusion: 'success', workflowName: 'PR', headBranch: 'dev', url: 'u', createdAt: '2026-10-05T10:03:01Z', updatedAt: '2026-10-05T10:05:00Z', jobs: [] }), stderr: '' } })
+  await addWatch(h, { provider: 'actions', id: '', repo: 'acme/rocket', pending: { workflow: 'pr.yaml', since: T } })
+  await addWatch(h, { provider: 'actions', id: '42', repo: 'acme/rocket', isPromised: true })
+  await pollOnce(h, { ntfyTopic: '' })
+  expect(h.prompts.length).toBe(1)
 })
 
 test('a dropped watch leaves a notice for the status line', async () => {

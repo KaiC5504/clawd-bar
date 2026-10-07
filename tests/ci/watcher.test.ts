@@ -35,8 +35,7 @@ test('a running build is tracked, then finishing alerts once and records the PB'
   status = 'finished'
   await pollOnce(h, { ntfyTopic: 'topic' })
   await pollOnce(h, { ntfyTopic: 'topic' })
-  expect(h.prompts.length).toBe(1)
-  expect(h.prompts[0]).toContain('passed in 7:00')
+  expect(h.prompts).toEqual([])
   expect(pushes()).toBe(1)
   expect(h.runs.filter(a => a[0] === 'powershell.exe').length).toBe(1)
   const view = await loadView(h)
@@ -44,6 +43,15 @@ test('a running build is tracked, then finishing alerts once and records the PB'
   expect(view.last!.isNewPB).toBe(true)
   expect(view.records['acme/rocket#testflight']!.total).toBe(420)
   expect(h.views.length > 0).toBe(true)
+})
+
+test('a pass wakes Claude only when it was told to wait for the build', async () => {
+  const { h } = world(() => 'finished')
+  await addWatch(h, { provider: 'codemagic', id: 'b1', repo: 'acme/rocket' })
+  await addWatch(h, { provider: 'codemagic', id: 'b1', repo: 'acme/rocket', isPromised: true })
+  await pollOnce(h, { ntfyTopic: '' })
+  expect(h.prompts.length).toBe(1)
+  expect(h.prompts[0]).toContain('passed in 7:00')
 })
 
 test('with continuing off, a finished build still alerts but never hands Claude a turn', async () => {

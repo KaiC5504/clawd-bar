@@ -5,7 +5,11 @@ export type Detected =
   | { kind: 'none' }
 
 const unquote = (s: string | undefined) => s?.replace(/^["']|["']$/g, '')
-const repoFlag = (command: string) => unquote(command.match(/(?:\s-R|--repo)[ =](\S+)/)?.[1])
+// A shell variable (`--repo $R`) can't be read from here; callers fall back to this repo.
+const repoFlag = (command: string) => {
+  const repo = unquote(command.match(/(?:\s-R|--repo)[ =](\S+)/)?.[1])
+  return repo?.includes('$') ? undefined : repo
+}
 
 export function classify(command: string): Detected {
   // A start wins over a watch in the same command: blocking it would also block the start.

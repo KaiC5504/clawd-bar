@@ -35,3 +35,8 @@ test('the run a watch names is read with its repo', () => {
   expect(watchedRun('gh run watch 77 -R o/r --exit-status')).toEqual({ id: '77', repo: 'o/r' })
   expect(watchedRun('gh run watch')).toBeUndefined()
 })
+
+test('a repo given as a shell variable is left for the caller to fill in', () => {
+  expect(watchedRun('gh run watch 77 -R $R')).toEqual({ id: '77', repo: undefined })
+  expect(classify('gh workflow run pr.yaml --repo "$R" --ref dev')).toEqual({ kind: 'actions-start', workflow: 'pr.yaml', ref: 'dev', repo: undefined })
+})

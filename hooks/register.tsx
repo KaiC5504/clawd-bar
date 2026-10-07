@@ -14,7 +14,7 @@ import { cmToRun, cmToken, fetchBuild, findApp, latestBuildId } from './ci/codem
 import { classify, parseCodemagicStarted, watchedRun } from './ci/detect'
 import type { Host } from './ci/host'
 import { originRemote, repoSlug } from './ci/repo'
-import { addWatch, loadView, pollOnce, showReplay, stopAll } from './ci/watcher'
+import { addWatch, loadView, pollOnce, promiseWatches, showReplay, stopAll } from './ci/watcher'
 import { applyEvent, initialPet, settleWork, visualFor, withUsage } from './pet-state'
 import type { HookPayload } from './pet-state'
 import { encode } from './pixels'
@@ -559,22 +559,24 @@ async function runCi($: EngineInterface, args: string) {
   return { text: token ? `No Codemagic app or Actions run found for ${here.slug}.` : `No Actions run found for ${here.slug}, and no Codemagic token is set (CODEMAGIC_API_TOKEN or ~/.codemagic-token).` }
 }
 
+async function raceWatchedRun($: EngineInterface, command: string, isPromised: boolean) {
+  const h = hostFrom($)
+  const target = watchedRun(command)
+  const repo = target?.repo ?? (await repoHere(h))?.slug
+  if (!target || !repo) return false
+  await addWatch(h, { provider: 'actions', id: target.id, repo, isPromised })
+  $.clock.after(5_000, () => void pollOnce(h, pollOpts()).catch(() => undefined))
+  return true
+}
+
 // A foreground watch is only refused when clawd-bar really is watching that run, so the
 // reason it gives is true. Anything it can't take over runs as asked.
 async function takeOverWatch($: EngineInterface, command: string, provider: 'codemagic' | 'actions') {
+  if (provider === 'actions') return raceWatchedRun($, command, true)
   const h = hostFrom($)
-  if (provider === 'actions') {
-    const target = watchedRun(command)
-    const repo = target?.repo ?? (await repoHere(h))?.slug
-    if (!target || !repo) return false
-    await addWatch(h, { provider: 'actions', id: target.id, repo })
-    $.clock.after(5_000, () => void pollOnce(h, pollOpts()).catch(() => undefined))
-    return true
-  }
   const here = await repoHere(h)
   if (!here) return false
-  const watches = (await loadView(h)).watches
-  return watches.some(w => w.provider === 'codemagic' && w.repo.toLowerCase() === here.slug.toLowerCase())
+  return promiseWatches(h, w => w.provider === 'codemagic' && w.repo.toLowerCase() === here.slug.toLowerCase())
 }
 
 type Shell = { command: string; run_in_background?: boolean; tool_use_id?: string }
@@ -602,6 +604,8 @@ async function watchShell($: EngineInterface, e: Shell, next: (e: Shell) => Prom
   if (d.kind === 'foreground-watch' && settings.isContinueOn && !e.run_in_background && (await takeOverWatch($, e.command, d.provider))) {
     return { deny: DENY }
   }
+  // Claude keeps its own watch, usually in the background, so this one races without promising a turn.
+  if (d.kind === 'foreground-watch' && d.provider === 'actions') await raceWatchedRun($, e.command, false)
   const ran = await next(e)
   if (ran.deny !== undefined || ran.isError) return ran
   const h = hostFrom($)
